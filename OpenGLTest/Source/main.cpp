@@ -1,249 +1,387 @@
-#shader vertex
-#version 330 core
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <chrono>
+#include <thread>
+#include <cmath>
 
-layout(location = 0) in vec4 position;
+const float windowX = 960;
+const float windowY = 720;
 
-void main(){
-    gl_Position = position;
-}
+const float G = 20.0; // gravitational constant for this specific simulation
 
-#shader fragment
-#version 330 core
+float obj1_x; float obj1_y;
+float obj1_x_vel; float obj1_y_vel;
+float obj1_mass;
 
-layout(location = 0) out vec4 color;
+float obj2_x; float obj2_y;
+float obj2_x_vel; float obj2_y_vel;
+float obj2_mass;
 
-uniform float iFrame;
-uniform vec3 iMouse;
-uniform vec4 iObj1;
-uniform vec4 iObj2;
-uniform vec4 iObj3;
-uniform vec3 iObjMasses;
-uniform float iPaused;
-uniform float iShowVels;
-uniform float iRaytracer;
+float obj3_x; float obj3_y;
+float obj3_x_vel; float obj3_y_vel;
+float obj3_mass;
 
-#define maxDist 10000.
-vec3 center;
-vec3 ray;
-float rdist;
-vec3 tcolor;
-vec3 normal;
-vec3 temp;
+double xpos, ypos; // mouse positions
+float mouseDown = 0;
+
+float frameCount = 0;
 
 float calcRadius(float mass, float mult) {
-    return sqrt(mass / 3.141593) * mult;
+    return (float)sqrt(mass / 3.141593) * mult;
 }
 
-vec3 masses = vec3(calcRadius(iObjMasses.x, 16), calcRadius(iObjMasses.y, 16), calcRadius(iObjMasses.z, 16));
-
-void setVec(vec3 cP, vec3 cR) {
-    center = cP;
-    ray = normalize(cR);
+float distance(float x1, float y1, float x2, float y2) {
+    return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
-void dirVec(vec2 cD) {
-    temp.x = ray.z;
-    ray.z = ray.z * cos(cD.y) - ray.y * sin(cD.y);
-    ray.y = ray.y * cos(cD.y) + temp.x * sin(cD.y);
-    temp.x = ray.z;
-    ray.z = ray.z * cos(cD.x) - ray.x * sin(cD.x);
-    ray.x = ray.x * cos(cD.x) + temp.x * sin(cD.x);
-}
-
-void sphere(vec4 posRad, vec3 sColor) {
-    vec3 obj = posRad.xyz - center;
-    vec3 temp = vec3(dot(obj, ray), dot(obj, obj), 0.);
-    if ((temp.x > 0.0) && (posRad.w * posRad.w > (temp.y - temp.x * temp.x))) {
-        temp.z = sqrt(posRad.w * posRad.w - (temp.y - temp.x * temp.x));
-        if ((temp.y > posRad.w * posRad.w) && rdist > temp.x - temp.z) {
-            rdist = temp.x - temp.z;
-            normal = normalize(center + ray * rdist - posRad.xyz);
-            tcolor = sColor;
-        }
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    if (distance(obj1_x, obj1_y, (float)xpos, 720 - (float)ypos) < calcRadius(obj1_mass, 16)) {
+        obj1_mass += (float)yoffset / 10;
+        obj1_mass = (float)fmax((double)obj1_mass, 0.5);
+    }
+    else if (distance(obj2_x, obj2_y, (float)xpos, 720 - (float)ypos) < calcRadius(obj2_mass, 16)) {
+        obj2_mass += (float)yoffset / 10;
+        obj2_mass = (float)fmax((double)obj2_mass, 0.5);
+    }
+    else if (distance(obj3_x, obj3_y, (float)xpos, 720 - (float)ypos) < calcRadius(obj3_mass, 16)) {
+        obj3_mass += (float)yoffset / 10;
+        obj3_mass = (float)fmax((double)obj3_mass, 0.5);
     }
 }
 
-void scene() {
-    sphere(vec4(iObj1.x, 0, iObj1.y, masses.x), vec3(1, 0, 0));
-    sphere(vec4(iObj2.x, 0, iObj2.y, masses.y), vec3(0, 1, 0));
-    sphere(vec4(iObj3.x, 0, iObj3.y, masses.z), vec3(0, 0, 1));
-    sphere(vec4(0, -10100, 0, 10000), vec3(0.25, 0.25, 0.25));
+void resetObjects() {
+    obj1_x = 480; obj1_y = 360;
+    obj1_x_vel = -0.5; obj1_y_vel = 0;
+    obj1_mass = 1;
+
+    obj2_x = 240 + 480; obj2_y = 120 + 360;
+    obj2_x_vel = 0; obj2_y_vel = 0;
+    obj2_mass = 5;
+
+    obj3_x = -360 + 480; obj3_y = -120 + 360;
+    obj3_x_vel = 0; obj3_y_vel = 0;
+    obj3_mass = 2;
 }
 
-vec3 raytrace(vec2 uv) {
-    vec3 CamPos = vec3(480.0, 540.0, 0);
-    vec2 CamDir = vec2(0, -1.0);
-    setVec(CamPos, vec3(uv, 1.0));
-    dirVec(CamDir);
-    rdist = maxDist;
-    scene();
-    if (rdist < maxDist) {
-        vec3 light = vec3(480, 20, 360);
-        vec3 lightVec = normalize(light - (center + rdist * ray));
-        vec3 saveC = vec3(clamp(dot(lightVec, normal), 0., 1.));
-        vec3 saveOC = tcolor;
-        center = center + rdist * ray + normal / 100000.;
-        ray = lightVec;
-        rdist = maxDist;
-        scene();
-        if (rdist < maxDist) {
-            return saveOC * 0.02;
-        }
-        return vec3((saveC + 0.02) * saveOC);
-    }
-    else {
-        return vec3(0);
-    }
+// 3 body physics simulation
+void ApplyPhysics() {
+    float d12 = distance(obj1_x, obj1_y, obj2_x, obj2_y);
+    float d23 = distance(obj2_x, obj2_y, obj3_x, obj3_y);
+    float d31 = distance(obj3_x, obj3_y, obj1_x, obj1_y);
+
+    float F12 = G * (obj1_mass * obj2_mass) / (d12 * d12);
+    float F23 = G * (obj2_mass * obj3_mass) / (d23 * d23);
+    float F31 = G * (obj3_mass * obj1_mass) / (d31 * d31);
+
+
+    float vec1_x = F12 * ((obj2_x - obj1_x) / d12) + F31 * ((obj3_x - obj1_x) / d31);
+    float vec2_x = F12 * ((obj1_x - obj2_x) / d12) + F23 * ((obj3_x - obj2_x) / d23);
+    float vec3_x = F31 * ((obj1_x - obj3_x) / d31) + F23 * ((obj2_x - obj3_x) / d23);
+
+    float vec1_y = F12 * ((obj2_y - obj1_y) / d12) + F31 * ((obj3_y - obj1_y) / d31);
+    float vec2_y = F12 * ((obj1_y - obj2_y) / d12) + F23 * ((obj3_y - obj2_y) / d23);
+    float vec3_y = F31 * ((obj1_y - obj3_y) / d31) + F23 * ((obj2_y - obj3_y) / d23);
+
+    obj1_x_vel += vec1_x;
+    obj1_y_vel += vec1_y;
+    obj2_x_vel += vec2_x;
+    obj2_y_vel += vec2_y;
+    obj3_x_vel += vec3_x;
+    obj3_y_vel += vec3_y;
+
+    obj1_x += obj1_x_vel;
+    obj1_y += obj1_y_vel;
+    obj2_x += obj2_x_vel;
+    obj2_y += obj2_y_vel;
+    obj3_x += obj3_x_vel;
+    obj3_y += obj3_y_vel;
+
+    //std::cout << obj3_x << "\n";
+    //std::cout << obj3_y << "\n";
 }
 
-bool circle(vec2 pos, float radius, vec2 testPos) {
-    return (distance(pos, testPos) < radius);
-}
+struct ShaderProgramSource {
+    std::string VertexSource;
+    std::string FragmentSource;
+};
 
-float segment(vec2 p, vec2 a, vec2 b) {
-    vec2 ba = b - a;
-    vec2 pa = p - a;
-    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-    return length(pa - h * ba);
-}
+static ShaderProgramSource ParseShader(const std::string& filepath) {
+    std::ifstream stream(filepath);
 
-void main() {
-    vec3 c = vec3(0, 0, 0);
+    enum class ShaderType {
+        NONE = -1, VERTEX = 0, FRAGMENT = 1
+    };
 
-    if (iPaused == 0 && iRaytracer == 1) {
-        vec2 uv = (gl_FragCoord.xy - vec2(480, 360)) / vec2(720, 720);
-        c = pow(raytrace(uv), vec3(0.4545));
-    } else {
-        // render circles
-        if (circle(iObj1.xy, masses.x, gl_FragCoord.xy)) {
-            bool m = circle(iObj1.xy, masses.x, iMouse.xy);
-            c += m ? vec3(1, 0.5, 0.5) : vec3(1, 0, 0);
-        }
-        if (circle(iObj2.xy, masses.y, gl_FragCoord.xy)) {
-            bool m = circle(iObj2.xy, masses.y, iMouse.xy);
-            c += m ? vec3(0.5, 1, 0.5) : vec3(0, 1, 0);
-        }
-        if (circle(iObj3.xy, masses.z, gl_FragCoord.xy)) {
-            bool m = circle(iObj3.xy, masses.z, iMouse.xy);
-            c += m ? vec3(0.5, 0.5, 1) : vec3(0, 0, 1);
-        }
-
-        // show velocities if button is toggled on or paused
-        if (iPaused == 1 || iShowVels == 1) {
-            float d = segment(gl_FragCoord.xy, iObj1.xy, iObj1.xy + iObj1.zw * 30) - 1.5;
-            if (d <= 0) {
-                c = vec3(0.5, 0.7, 1.0);
+    std::string line;
+    std::stringstream ss[2];
+    ShaderType type = ShaderType::NONE;
+    while (getline(stream, line)) {
+        if (line.find("shader") != std::string::npos) {
+            if (line.find("vertex") != std::string::npos) {
+                type = ShaderType::VERTEX;
             }
-            d = segment(gl_FragCoord.xy, iObj2.xy, iObj2.xy + iObj2.zw * 30) - 1.5;
-            if (d <= 0) {
-                c = vec3(0.5, 0.7, 1.0);
-            }
-            d = segment(gl_FragCoord.xy, iObj3.xy, iObj3.xy + iObj3.zw * 30) - 1.5;
-            if (d <= 0) {
-                c = vec3(0.5, 0.7, 1.0);
+            else if (line.find("fragment") != std::string::npos) {
+                type = ShaderType::FRAGMENT;
             }
         }
-
-        // show velocity editor thingies when paused
-        if (iPaused == 1) {
-            float d = segment(gl_FragCoord.xy, iObj1.xy, iObj1.xy + iObj1.zw * 30) - 1.5;
-            if (d <= 0) {
-                c = vec3(0.5, 0.7, 1.0);
-            }
-            d = segment(gl_FragCoord.xy, iObj2.xy, iObj2.xy + iObj2.zw * 30) - 1.5;
-            if (d <= 0) {
-                c = vec3(0.5, 0.7, 1.0);
-            }
-            d = segment(gl_FragCoord.xy, iObj3.xy, iObj3.xy + iObj3.zw * 30) - 1.5;
-            if (d <= 0) {
-                c = vec3(0.5, 0.7, 1.0);
-            }
-            if (circle(iObj1.xy + iObj1.zw * 30, 4, gl_FragCoord.xy)) {
-                bool m = circle(iObj1.xy + iObj1.zw * 30, 4, iMouse.xy);
-                c = vec3(0.5, 0.7, 1.0) * (m ? 1 : 0.5);
-            }
-            if (circle(iObj2.xy + iObj2.zw * 30, 4, gl_FragCoord.xy)) {
-                bool m = circle(iObj2.xy + iObj2.zw * 30, 4, iMouse.xy);
-                c = vec3(0.5, 0.7, 1.0) * (m ? 1 : 0.5);
-            }
-            if (circle(iObj3.xy + iObj3.zw * 30, 4, gl_FragCoord.xy)) {
-                bool m = circle(iObj3.xy + iObj3.zw * 30, 4, iMouse.xy);
-                c = vec3(0.5, 0.7, 1.0) * (m ? 1 : 0.5);
-            }
+        else {
+            ss[(int)type] << line << "\n";
         }
     }
+    return { ss[0].str(), ss[1].str() };
+}
 
-    // buttons
-    if (gl_FragCoord.x >= 820 || gl_FragCoord.y > 700) {
+static unsigned int CompileShader(unsigned int type, const std::string& source) {
+    unsigned int id = glCreateShader(type);
+    const char* src = source.c_str();
+    glShaderSource(id, 1, &src, nullptr);
+    glCompileShader(id);
 
-        // pause/play
-        bool brighten = distance(vec2(948.5, 710), iMouse.xy) < 14.0;
+    int result;
+    glGetShaderiv(id, GL_COMPILE_STATUS, &result);
+    if (result == GL_FALSE) {
+        int length;
+        glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
+        char* message = (char*)_malloca(length * sizeof(char));
+        glGetShaderInfoLog(id, length, &length, message);
+        std::cout << (type == GL_VERTEX_SHADER ? "Vertex" : "fragment") << " shader compilation failed:\n";
+        std::cout << message << "\n";
+        glDeleteShader(id);
+        return 0;
+    }
 
-        if (iPaused == 0) {
-            if (gl_FragCoord.x >= 944 && gl_FragCoord.x <= 948 && gl_FragCoord.y <= 717 && gl_FragCoord.y >= 703) {
-                c = brighten ? vec3(1) : vec3(0.5);
-            }
-            if (gl_FragCoord.x >= 953 && gl_FragCoord.x <= 957 && gl_FragCoord.y <= 717 && gl_FragCoord.y >= 703) {
-                c = brighten ? vec3(1) : vec3(0.5);
-            }
-        } else {
-            if (gl_FragCoord.y >= (0.75 * gl_FragCoord.x - 7)) {
-                if (gl_FragCoord.y <= (-0.75 * gl_FragCoord.x + 1427)) {
-                    if (gl_FragCoord.x > 945) {
-                        c = brighten ? vec3(1) : vec3(0.5);
+    return id;
+}
+
+static unsigned int CreateShader(const std::string& vertexShader, const std::string& fragmentShader) {
+    unsigned int program = glCreateProgram();
+    unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader);
+    unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
+
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
+    glValidateProgram(program);
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    return program;
+}
+
+int main(void)
+{
+    using namespace std::chrono_literals;
+
+    GLFWwindow* window;
+
+    /* Initialize the library */
+    if (!glfwInit())
+        return -1;
+
+    /* Create a windowed mode window and its OpenGL context */
+    window = glfwCreateWindow((int)windowX, (int)windowY, "Trigophers' 2D Orbit Simulator", NULL, NULL);
+    if (!window)
+    {
+        glfwTerminate();
+        return -1;
+    }
+
+    /* Make the window's context current */
+    glfwMakeContextCurrent(window);
+
+    GLenum err = glewInit();
+    if (GLEW_OK != err)
+    {
+        /* Problem: glewInit failed, something is seriously wrong. */
+        fprintf(stderr, "Error: %s\n", glewGetErrorString(err));
+    }
+    fprintf(stdout, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
+
+    // -----------------------------
+
+    float positions[8] = {
+        -1.0, -1.0,
+         1.0, -1.0,
+         1.0,  1.0,
+        -1.0,  1.0
+    };
+
+    unsigned int indices[6] = {
+        0, 1, 2,
+        2, 3, 0
+    };
+
+    unsigned int buffer;
+    glGenBuffers(1, &buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, buffer);
+    glBufferData(GL_ARRAY_BUFFER, 8 * sizeof(float), positions, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 2, 0);
+
+    unsigned int ibo;
+    glGenBuffers(1, &ibo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, 6 * sizeof(unsigned int), indices, GL_STATIC_DRAW);
+
+    ShaderProgramSource source = ParseShader("res/shaders/basic.shader");
+    unsigned int shader = CreateShader(source.VertexSource, source.FragmentSource);
+    glUseProgram(shader);
+
+    bool mouseWentDown = false;
+    float paused = 1; // pause the simulation
+    float showVels = 0;
+    float raytracerMode = 0;
+    int dragObjNum = 0;
+    int dragVelNum = 0;
+
+    resetObjects();
+
+    glfwSetScrollCallback(window, scroll_callback);
+
+    //loop
+    while (!glfwWindowShouldClose(window))
+    {
+        auto start_timer = std::chrono::high_resolution_clock::now(); //limit framerate
+
+        glClear(GL_COLOR_BUFFER_BIT); // clear screen for following shader render
+
+
+        glfwGetCursorPos(window, &xpos, &ypos); // cursor position
+
+        // cursor state
+        int mState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+        if (mState == GLFW_PRESS) {
+            if (mouseDown == 1) {
+                mouseWentDown = false; // check if the mouse went down the current frame
+            } else {
+                mouseWentDown = true; // if mouse went down, see if it was clicking any of the circles or their velocities
+                if (paused == 1) {
+                    if (distance(obj1_x + obj1_x_vel * 30, obj1_y + obj1_y_vel * 30, (float)xpos, 720 - (float)ypos) < 4) {
+                        dragVelNum = 1;
+                    } else if (distance(obj2_x + obj2_x_vel * 30, obj2_y + obj2_y_vel * 30, (float)xpos, 720 - (float)ypos) < 4) {
+                        dragVelNum = 2;
+                    } else if (distance(obj3_x + obj3_x_vel * 30, obj3_y + obj3_y_vel * 30, (float)xpos, 720 - (float)ypos) < 4) {
+                        dragVelNum = 3;
+                    } else {
+                        dragVelNum = 0;
+
+                        if (distance(obj1_x, obj1_y, (float)xpos, 720 - (float)ypos) < calcRadius(obj1_mass, 16)) {
+                            dragObjNum = 1;
+                        } else if (distance(obj2_x, obj2_y, (float)xpos, 720 - (float)ypos) < calcRadius(obj2_mass, 16)) {
+                            dragObjNum = 2;
+                        } else if (distance(obj3_x, obj3_y, (float)xpos, 720 - (float)ypos) < calcRadius(obj3_mass, 16)) {
+                            dragObjNum = 3;
+                        } else {
+                            dragObjNum = 0;
+                        }
                     }
                 }
             }
+
+            mouseDown = 1;
+        } else {
+            mouseDown = 0;
+            mouseWentDown = false;
+            dragObjNum = 0;
+            dragVelNum = 0;
         }
 
-        // velocity
-        brighten = distance(vec2(930, 710), iMouse.xy) < 14.0;
-        float d = segment(gl_FragCoord.xy, vec2(930, 703), vec2(938, 717)) - 1.5;
-        if (d <= 0) {
-            c = brighten ? vec3(1) : vec3(0.5);
+        // change object velocities based on mouse position
+        if (dragVelNum == 1) {
+            obj1_x_vel = ((float)xpos - obj1_x) / 30;
+            obj1_y_vel = (720 - (float)ypos - obj1_y) / 30;
         }
-        d = segment(gl_FragCoord.xy, vec2(930, 703), vec2(922, 717)) - 1.5;
-        if (d <= 0) {
-            c = brighten ? vec3(1) : vec3(0.5);
+        if (dragVelNum == 2) {
+            obj2_x_vel = ((float)xpos - obj2_x) / 30;
+            obj2_y_vel = (720 - (float)ypos - obj2_y) / 30;
         }
-        if (iShowVels == 0) {
-            d = segment(gl_FragCoord.xy, vec2(923, 703), vec2(941, 717)) - 1.5;
-            if (d <= 0) {
-                c = brighten ? vec3(1) : vec3(0.5);
-            }
+        if (dragVelNum == 3) {
+            obj3_x_vel = ((float)xpos - obj3_x) / 30;
+            obj3_y_vel = (720 - (float)ypos - obj3_y) / 30;
         }
 
-        // reset
-        brighten = distance(vec2(910, 710), iMouse.xy) < 14.0;
-        d = segment(gl_FragCoord.xy, vec2(916, 705), vec2(916, 715)) - 1.5;
-        if (d <= 0) {
-            c = brighten ? vec3(1) : vec3(0.5);
+        // change object positions based on mouse position
+        if (dragObjNum == 1) {
+            obj1_x = (float)xpos;
+            obj1_y = 720 - (float)ypos;
         }
-        d = segment(gl_FragCoord.xy, vec2(916, 715), vec2(904, 715)) - 1.5;
-        if (d <= 0) {
-            c = brighten ? vec3(1) : vec3(0.5);
+        if (dragObjNum == 2) {
+            obj2_x = (float)xpos;
+            obj2_y = 720 - (float)ypos;
         }
-        d = segment(gl_FragCoord.xy, vec2(904, 715), vec2(907, 717)) - 1.5;
-        if (d <= 0) {
-            c = brighten ? vec3(1) : vec3(0.5);
-        }
-        d = segment(gl_FragCoord.xy, vec2(904, 715), vec2(907, 713)) - 1.5;
-        if (d <= 0) {
-            c = brighten ? vec3(1) : vec3(0.5);
+        if (dragObjNum == 3) {
+            obj3_x = (float)xpos;
+            obj3_y = 720 - (float)ypos;
         }
 
-        //raytracer button
-        brighten = distance(vec2(890, 710), iMouse.xy) < 14.0;
-        if (iRaytracer == 0) {
-            d = segment(gl_FragCoord.xy, vec2(922-40, 703), vec2(938-40, 717)) - 1.5;
-            if (d <= 0) {
-                c = brighten ? vec3(1) : vec3(0.5);
-            }
+        if (mouseWentDown && distance(950, 10, (float)xpos, (float)ypos) < 10.0) {
+            paused = abs(paused - 1); // toggle pause button
         }
-        if (circle(vec2(890, 710), 8, gl_FragCoord.xy) && !circle(vec2(890, 710), 6, gl_FragCoord.xy)) {
-            c = brighten ? vec3(1) : vec3(0.5);
+        if (mouseWentDown && distance(950-20, 10, (float)xpos, (float)ypos) < 10.0) {
+            showVels = abs(showVels - 1); // toggle pause button
         }
+        if (mouseWentDown && distance(950 - 40, 10, (float)xpos, (float)ypos) < 10.0) {
+            resetObjects(); // reset all objects
+        }
+        if (mouseWentDown && distance(950 - 60, 10, (float)xpos, (float)ypos) < 10.0) {
+            raytracerMode = abs(raytracerMode - 1);
+        }
+
+        // frame number input
+        GLint UniformLocation = glGetUniformLocation(shader, "iFrame");
+        glProgramUniform1f(shader, UniformLocation, frameCount);
+
+        // mouse position/click input
+        UniformLocation = glGetUniformLocation(shader, "iMouse");
+        glProgramUniform3f(shader, UniformLocation, (float)xpos, (float)(720.0-ypos), mouseDown);
+
+        if (paused == 0) {
+            ApplyPhysics();
+        }
+
+        UniformLocation = glGetUniformLocation(shader, "iPaused");
+        glProgramUniform1f(shader, UniformLocation, paused);
+        UniformLocation = glGetUniformLocation(shader, "iShowVels");
+        glProgramUniform1f(shader, UniformLocation, showVels);
+
+        // object locations
+        UniformLocation = glGetUniformLocation(shader, "iObj1");
+        glProgramUniform4f(shader, UniformLocation, obj1_x, obj1_y, obj1_x_vel, obj1_y_vel);
+        UniformLocation = glGetUniformLocation(shader, "iObj2");
+        glProgramUniform4f(shader, UniformLocation, obj2_x, obj2_y, obj2_x_vel, obj2_y_vel);
+        UniformLocation = glGetUniformLocation(shader, "iObj3");
+        glProgramUniform4f(shader, UniformLocation, obj3_x, obj3_y, obj3_x_vel, obj3_y_vel);
+
+        UniformLocation = glGetUniformLocation(shader, "iObjMasses");
+        glProgramUniform3f(shader, UniformLocation, obj1_mass, obj2_mass, obj3_mass);
+
+        UniformLocation = glGetUniformLocation(shader, "iRaytracer");
+        glProgramUniform1f(shader, UniformLocation, raytracerMode);
+
+
+
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+
+        // limit framerate
+        auto end_timer = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = end_timer - start_timer;
+        int millisecs = (int)((1.0 / 60.0 - elapsed.count())*1000);
+        std::this_thread::sleep_for(std::chrono::milliseconds(millisecs));
+
+        frameCount++;
     }
 
-    color = vec4(c, 1.0);
+    glDeleteProgram(shader);
+
+    glfwTerminate();
+    return 0;
 }
