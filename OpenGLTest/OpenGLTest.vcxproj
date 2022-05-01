@@ -24,6 +24,7 @@
     <ProjectGuid>{5b74d008-5259-4724-a404-79dec6426ded}</ProjectGuid>
     <RootNamespace>OpenGLTest</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>OrbitSimulator</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
